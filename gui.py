@@ -16,10 +16,10 @@ from PySide2.QtGui import (QBrush, QColor, QConicalGradient, QCursor, QFont,
     QFontDatabase, QIcon, QLinearGradient, QPalette, QPainter, QPixmap,
     QRadialGradient)
 from PySide2.QtWidgets import *
-from cv2 import IMWRITE_PNG_STRATEGY_HUFFMAN_ONLY
 import openpyxl
 import csv
 import win32api, win32con, win32gui, ctypes
+from regenerate import *
 
 class Column_widget(QFrame):
     def __init__(self, parent=None):
@@ -67,24 +67,27 @@ class Column_widget(QFrame):
         self.label_4.setText(QCoreApplication.translate("MainWindow", u"Metoda", None))
         self.MinVal.setText(QCoreApplication.translate("MainWindow", u"0", None))
         self.MaxVal.setText(QCoreApplication.translate("MainWindow", u"1", None))
-        self.Method.addItem("Średnia")
         self.Method.addItem("Poprzedzająca")
         self.Method.addItem("Następująca")
+        self.Method.addItem("Średnia")
+        self.Method.addItem("Pośrednia")
+        
 
 class Ui_MainWindow(object):
     filestr = ""
-
+    minmaxes = []
+    columns = []
     def setupUi(self, MainWindow):
         if MainWindow.objectName():
             MainWindow.setObjectName(u"xls regenerator")
-        MainWindow.resize(800, 180)
+        MainWindow.resize(800, 141)
         
 
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.scrollArea = QScrollArea(self.centralwidget)
         self.scrollArea.setObjectName(u"scrollArea")
-        self.scrollArea.setGeometry(QRect(150, 10, 641, 161))
+        self.scrollArea.setGeometry(QRect(150, 10, 641, 121))
         self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.scrollArea.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
@@ -94,14 +97,14 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollAreaWidgetContents = QWidget()
         self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
-        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 639, 142))
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 639, 112))
         self.column_frames = []#  = Column_widget(self.scrollArea)
         self.status = QLabel(self.centralwidget)
         self.status.setObjectName(u"status")
-        self.status.setGeometry(QRect(15, 70, 131, 123))
+        self.status.setGeometry(QRect(15, 50, 131, 123))
         self.substatus = QLabel(self.centralwidget)
         self.substatus.setObjectName(u"status")
-        self.substatus.setGeometry(QRect(15, 100, 131, 123))
+        self.substatus.setGeometry(QRect(15, 60, 131, 123))
         self.substatus.show()
 
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
@@ -127,7 +130,7 @@ class Ui_MainWindow(object):
     def pushButton_clicked(self):
         for i in range(len(self.column_frames)):
             self.column_frames[i].deleteLater()
-        self.filestr = QFileDialog.getOpenFileName(None, 'Wczytaj plik', '.\\', "CSV files (*.csv);;Excel FIles (*.xls *.xlsx)")[0]
+        self.filestr = QFileDialog.getOpenFileName(None, 'Wczytaj plik', '.\\', "Excel FIles (*.xls *.xlsx);;CSV files (*.csv)")[0]
         self.status.setText(QCoreApplication.translate("MainWindow", u"Wczytywanie pliku... ",None))
         QCoreApplication.processEvents()
         if self.filestr != "":
@@ -195,112 +198,69 @@ class Ui_MainWindow(object):
         QCoreApplication.processEvents()
 
     def minmax(self, column):
-        min = float(inf)
-        max = float(-inf)
+        if column in range(len(self.minmaxes)): return self.minmaxes[column]
+        values = []
         if self.filestr[-3:] == "csv":
             for i,row in enumerate(self.data):
                 if i == 0:
                     continue
                 try:
-                    if float(row[column]) > max:
-                        max = float(row[column])
-                    if float(row[column]) < min:
-                        min = float(row[column])
+                    values.append(float(row[column]))
                 except:
                     pass
         if self.filestr[-3:] == "xls" or self.filestr[-4:] == "xlsx":
             for cell in range(self.sheet.max_row):
                 try:
-                    if float(self.sheet.cell(row=cell+1, column=column).value) > max:
-                        max = float(self.sheet.cell(row=cell+1, column=column).value)
-                    elif float(self.sheet.cell(row=cell+1, column=column).value) < min:
-                        min = float(self.sheet.cell(row=cell+1, column=column).value)
+                    values.append(float(self.sheet.cell(row=cell+1, column=column).value))
                 except:
                     pass
-        return min, max
+        if values:
+            self.minmaxes.append([min(values), max(values)])
+            return min(values), max(values)
+        self.minmaxes.append([-inf, inf])
+        return -inf, inf
 
     def method(self, column, cell):
-        if self.filestr[-3] == "csv":
-            cells = list()
-            if self.column_frames[column].Method.currentText() == "Średnia":
-                for i in range(1,len(self.data),1):
-                    self.substatus.setText(QCoreApplication.translate("MainWindow", "Średnia " + str(i) + "   " + str(column),None))
-                    QCoreApplication.processEvents()
+        values = list()
+        try:
+            min, max = float(self.column_frames[column].MinVal.text()), float(self.column_frames[column].MaxVal.text())
+        except:
+            min, max = -inf, inf
+        if column not in range(len(self.columns)):
+            if self.filestr[-3] == "csv":
+                for i,row in enumerate(self.data):
+                    if i == 0:
+                        continue
                     try:
-                        if float(self.data[i][column]) > self.column_frames[column].MinVal.text() and self.data[i][column] < self.column_frames[column].MaxVal.text():
-                            cells.append(self.data[i][column])
+                        values.append(float(row[column]))
                     except:
                         pass
-                return sum(cells)/len(cells)
-            elif self.column_frames[column].Method.currentText() == "Poprzedzająca":
-                if cell == 0:
-                    return 0
-                for i in range(1,len(self.data),1):
-                    self.substatus.setText(QCoreApplication.translate("MainWindow", "Poprzedzająca " + str(i) + "   " + str(column),None))
-                    QCoreApplication.processEvents()
+            elif self.filestr[-3:] == "xls" or self.filestr[-4:] == "xlsx":
+                for row_cell in range(self.sheet.max_row):
                     try:
-                        if float(self.data[i][column]) > self.column_frames[column].MinVal.text() and self.data[i][column] < self.column_frames[column].MaxVal.text():
-                            if i > cell:
-                                if cells:
-                                    return cells[-1]
-                                return 0
-                            cells.append(self.data[i][column])
-                    except:
-                        return 0
-            elif self.column_frames[column].Method.currentText() == "Następująca":
-                if cell == len(self.data)-1:
-                    return 0
-                for i in range(len(self.data),1,-1):
-                    self.substatus.setText(QCoreApplication.translate("MainWindow", "Następująca " + str(i) + "   " + str(column),None))
-                    QCoreApplication.processEvents()
-                    if float(self.data[i][column]) > self.column_frames[column].MinVal.text() and self.data[i][column] < self.column_frames[column].MaxVal.text():
-                        cells.append(self.data[i][column])
-                        if i < cell:
-                            if cells:
-                                return cells[-1]
-                            return 0
-        elif self.filestr[-3:] == "xls" or self.filestr[-4:] == "xlsx":
-            cells = list()
-            if self.column_frames[column].Method.currentText() == "Średnia":
-                for i in range(1,self.sheet.max_row,1):
-                    self.substatus.setText(QCoreApplication.translate("MainWindow", "Średnia " + str(i) + "   " + str(column),None))
-                    QCoreApplication.processEvents()
-                    try:
-                        if float(self.sheet.cell(row=i, column=column).value) > float(self.column_frames[column].MinVal.text()) and float(self.sheet.cell(row=i, column=column).value) < float(self.column_frames[column].MaxVal.text()):
-                            cells.append(self.sheet.cell(row=i, column=column).value)
+                        values.append(float(self.sheet.cell(row=row_cell+1, column=column).value))
                     except:
                         pass
-                return sum(cells)/len(cells)
-            elif self.column_frames[column].Method.currentText() == "Poprzedzająca":
-                if cell == 0:
-                    return 0
-                try:
-                    self.substatus.setText(QCoreApplication.translate("MainWindow", "Poprzedzająca " + str(i) + "   " + str(column),None))
-                    QCoreApplication.processEvents()
-                    for i in range(1,self.sheet.max_row,1):
-                        if float(self.sheet.cell(row=i, column=column).value) > float(self.column_frames[column].MinVal.text()) and float(self.sheet.cell(row=i, column=column).value) < float(self.column_frames[column].MaxVal.text()):
-                            if i > cell:
-                                if cells:
-                                    return cells[-1]
-                                return 0
-                            cells.append(self.sheet.cell(row=i, column=column).value)
-                except:
-                    return 0
-            elif self.column_frames[column].Method.currentText() == "Następująca":
-                if cell == self.sheet.max_row-1:
-                    return 0
-                for i in range(self.sheet.max_row,1,-1):
-                    self.substatus.setText(QCoreApplication.translate("MainWindow", "Następująca " + str(i) + "   " + str(column),None))
-                    QCoreApplication.processEvents()
-                    try:
-                        if float(self.sheet.cell(row=i, column=column).value) > float(self.column_frames[column].MinVal.text()) and float(self.sheet.cell(row=i, column=column).value) < float(self.column_frames[column].MaxVal.text()):
-                            if i < cell:
-                                if cells:
-                                    return cells[-1]
-                                return 0
-                            cells.append(self.sheet.cell(row=i, column=column).value)
-                    except:
-                        return 0
+            self.columns.append(values)
+        else:
+            values = self.columns[column]
+        if self.column_frames[column].Method.currentText() == "Średnia":
+            self.substatus.setText(QCoreApplication.translate("MainWindow", "Średnia " + self.column_frames[column].Column_name.text(),None))
+            QCoreApplication.processEvents()
+            return calculate_medium([min,max],values)
+        elif self.column_frames[column].Method.currentText() == "Poprzedzająca":
+            self.substatus.setText(QCoreApplication.translate("MainWindow", "Poprzedzająca " + self.column_frames[column].Column_name.text(),None))
+            QCoreApplication.processEvents()
+            return find_good_previous_value([min,max],values,cell)
+        elif self.column_frames[column].Method.currentText() == "Następująca":
+            self.substatus.setText(QCoreApplication.translate("MainWindow", "Poprzedzająca " + self.column_frames[column].Column_name.text(),None))
+            QCoreApplication.processEvents()
+            return find_good_next_value([min,max],values,cell)
+        elif self.column_frames[column].Method.currentText() == "Pośrednia":
+            self.substatus.setText(QCoreApplication.translate("MainWindow", "Pośrednia " + self.column_frames[column].Column_name.text(),None))
+            QCoreApplication.processEvents()
+            prev, next = find_good_previous_value([min,max],values,cell), find_good_next_value([min,max],values,cell)
+            return (prev+next)/2
 
 
 
